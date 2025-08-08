@@ -2,6 +2,9 @@
 
 A web‑based financial tool built with **Streamlit** that lets you compare how different payment strategies affect the payoff timeline and total interest for multiple debts.
 
+## Demo
+<video src="assets/demo_debt_cal.webm" width="100%" controls loop muted></video>
+
 ## Features
 
 * Enter any number of credit‑cards, loans, or other debts
