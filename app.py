@@ -1,12 +1,12 @@
 """
-Multi-Debt Payoff & What-If Calculator
+Debt Payoff Calculator
 =====================================
 A **Streamlit** app to compare minimum‑payment vs. actual‑payment plans for multiple debts and explore what‑if scenarios.
 
 Run locally with:
 
     pip install streamlit pandas numpy
-    streamlit run debt_calculator_app.py
+    streamlit run app.py
 
 © 2025 Personal Finance Tools · MIT‑licensed
 """
@@ -56,7 +56,7 @@ def amortization_schedule(
 
 st.set_page_config(page_title="Debt Payoff Calculator", layout="centered", initial_sidebar_state="expanded")
 
-st.title("💸 Multi‑Debt Payoff & What‑If Calculator")
+st.title("💸 Debt Payoff Calculator")
 
 DEFAULT = pd.DataFrame(
     {
