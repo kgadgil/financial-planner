@@ -1,7 +1,7 @@
 """
-Multi‑Debt Payoff & What‑If Calculator
+Multi-Debt Payoff & What‑If Calculator
 =====================================
-A **Streamlit** app to explore how paying more than the minimum on each debt affects payoff time and total interest.
+A **Streamlit** app to compare minimum‑payment vs. actual‑payment plans for multiple debts and explore what‑if scenarios.
 
 Run locally with:
 
@@ -17,7 +17,7 @@ import streamlit as st
 import pandas as pd
 
 # =====================================================================
-# Helpers
+# Helper functions
 # =====================================================================
 
 def amortization_schedule(
@@ -41,47 +41,43 @@ def amortization_schedule(
         principal = min(principal, balance)
         balance -= principal
         total_interest += interest
-        rows.append({
-            "Month": month,
-            "Payment": payment + extra,
-            "Principal": principal,
-            "Interest": interest,
-            "Balance": balance,
-        })
+        rows.append(
+            {
+                "Month": month,
+                "Payment": payment + extra,
+                "Principal": principal,
+                "Interest": interest,
+                "Balance": balance,
+            }
+        )
     df = pd.DataFrame(rows)
     return df, total_interest
 
 
-def aggregate_balances(schedules: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    if not schedules:
-        return pd.DataFrame(columns=["Month", "Total Balance"])
-    agg = (
-        pd.concat({n: df.set_index("Month")["Balance"] for n, df in schedules.items()}, axis=1)
-        .fillna(0.0)
-    )
-    agg["Total Balance"] = agg.sum(axis=1)
-    agg.reset_index(inplace=True)
-    return agg[["Month", "Total Balance"]]
-
-
 # =====================================================================
-# Streamlit layout
+# Streamlit layout & state
 # =====================================================================
 
-st.set_page_config(page_title="Debt Payoff Calculator", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Debt Payoff Calculator",
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
 
 st.title("💸 Multi‑Debt Payoff & What‑If Calculator")
 
-# ---------------- Sidebar: Debts table ----------------
+# ---------------- Sidebar — Debts table ----------------
 
 st.sidebar.header("Debts")
-DEFAULT = pd.DataFrame({
-    "Name": ["Card A"],
-    "Balance": [10_000.0],
-    "Annual Rate (%)": [18.99],
-    "Minimum Payment": [200.0],
-    "Monthly Payment": [300.0],
-})
+DEFAULT = pd.DataFrame(
+    {
+        "Name": ["Card A"],
+        "Balance": [10_000.0],
+        "Annual Rate (%)": [18.99],
+        "Minimum Payment": [200.0],
+        "Monthly Payment": [300.0],
+    }
+)
 
 if "debts" not in st.session_state:
     st.session_state.debts = DEFAULT.copy()
@@ -95,43 +91,43 @@ edited_df: pd.DataFrame = st.sidebar.data_editor(
 
 st.session_state.debts = edited_df
 
-debts = edited_df.dropna(subset=["Balance", "Annual Rate (%)", "Minimum Payment", "Monthly Payment"]).copy()
+debts = edited_df.dropna(
+    subset=["Balance", "Annual Rate (%)", "Minimum Payment", "Monthly Payment"]
+).copy()
+
 if debts.empty:
     st.info("Add at least one debt to begin.")
     st.stop()
 
-# -------------- Baseline & minimum schedules ---------------
+# -------------- Build minimum & actual schedules ---------------
 
-schedules_actual: dict[str, pd.DataFrame] = {}
-schedules_min: dict[str, pd.DataFrame] = {}
-errors: list[str] = []
-
-total_interest_actual = 0.0
-total_interest_min = 0.0
-max_months_actual = 0
+schedules_min, schedules_act = {}, {}
+min_interest_total, act_interest_total = 0.0, 0.0
+max_months_act = 0
+errors = []
 
 for _, r in debts.iterrows():
     name = str(r["Name"]).strip() or "Unnamed Debt"
     bal = float(r["Balance"])
     rate_m = float(r["Annual Rate (%)"]) / 100 / 12
-    min_pay = float(r["Minimum Payment"])
-    mon_pay = float(r["Monthly Payment"])
+    p_min = float(r["Minimum Payment"])
+    p_act = float(r["Monthly Payment"])
 
-    # Minimum‑payment schedule
+    # Minimum schedule
     try:
-        min_df, min_int = amortization_schedule(bal, rate_m, min_pay)
-        schedules_min[name] = min_df
-        total_interest_min += min_int
+        df_min, int_min = amortization_schedule(bal, rate_m, p_min)
+        schedules_min[name] = df_min
+        min_interest_total += int_min
     except ValueError as exc:
         errors.append(f"{name} (minimum): {exc}")
         continue
 
     # Actual schedule
     try:
-        act_df, act_int = amortization_schedule(bal, rate_m, mon_pay)
-        schedules_actual[name] = act_df
-        total_interest_actual += act_int
-        max_months_actual = max(max_months_actual, len(act_df))
+        df_act, int_act = amortization_schedule(bal, rate_m, p_act)
+        schedules_act[name] = df_act
+        act_interest_total += int_act
+        max_months_act = max(max_months_act, len(df_act))
     except ValueError as exc:
         errors.append(f"{name} (actual): {exc}")
 
@@ -139,55 +135,72 @@ if errors:
     st.error("\n".join(errors))
     st.stop()
 
-# ------------------ Aggregate metrics -------------------
+# ---------------- Dashboard metrics -------------------
 
 total_balance = debts["Balance"].sum()
 monthly_payment_sum = debts["Monthly Payment"].sum()
 minimum_payment_sum = debts["Minimum Payment"].sum()
-interest_saved_total = total_interest_min - total_interest_actual
+interest_saved_total = min_interest_total - act_interest_total
 
 c1, c2, c3 = st.columns(3)
-c1.metric("⏱️ Payoff Time (longest)", f"{max_months_actual} mo", f"{max_months_actual/12:.1f} yr")
-c2.metric("💰 Total Interest (actual)", f"${total_interest_actual:,.2f}")
+
+c1.metric("⏱️ Payoff Time (longest)", f"{max_months_act} mo", f"{max_months_act/12:.1f} yr")
+
+c2.metric("💰 Total Interest (actual)", f"${act_interest_total:,.2f}")
+
 c3.metric("💸 Interest Saved vs Min", f"${interest_saved_total:,.2f}")
 
 c4, c5 = st.columns(2)
 c4.metric("🧾 Sum of Monthly Payments", f"${monthly_payment_sum:,.2f}")
 c5.metric("📉 Sum of Minimum Payments", f"${minimum_payment_sum:,.2f}")
 
-# ------------------ Aggregate balance curve -------------
+# ---------------- Balance curves with toggles ----------
 
-agg = aggregate_balances(schedules_actual)
-if not agg.empty:
-    st.subheader("Aggregate Balance (Actual Payments)")
-    st.line_chart(agg.set_index("Month")["Total Balance"])
+st.subheader("Balance Curves")
 
-# ------------------ Individual amortization toggle ------
+# Build balance DataFrame containing each debt and total
+balances_df = (
+    pd.concat({n: df.set_index("Month")["Balance"] for n, df in schedules_act.items()}, axis=1)
+    .ffill()
+    .fillna(0.0)
+)
+balances_df["Total Balance"] = balances_df.sum(axis=1)
+
+all_cols = list(balances_df.columns)
+selected_cols = st.multiselect(
+    "Select balances to display", all_cols, default=["Total Balance"]
+)
+
+if selected_cols:
+    st.line_chart(balances_df[selected_cols])
+
+# --------------- Optional individual amortization tables ------------
 
 if st.checkbox("Show individual amortization tables"):
-    for n, df in schedules_actual.items():
+    for n, df in schedules_act.items():
         st.markdown(f"#### {n} – Actual Payments")
         st.dataframe(
-            df.style.format({
-                "Payment": "${:,.2f}",
-                "Principal": "${:,.2f}",
-                "Interest": "${:,.2f}",
-                "Balance": "${:,.2f}",
-            }),
+            df.style.format(
+                {
+                    "Payment": "${:,.2f}",
+                    "Principal": "${:,.2f}",
+                    "Interest": "${:,.2f}",
+                    "Balance": "${:,.2f}",
+                }
+            ),
             height=380,
         )
 
-# ================ Per‑debt What‑If Scenarios ================
+# ================ Per‑debt What‑If Scenarios =================
 
 st.header("🔮 What‑If Scenarios (per debt)")
-sel_name = st.selectbox("Select a debt", list(schedules_actual.keys()))
-base_df = schedules_actual[sel_name]
+sel_name = st.selectbox("Select a debt", list(schedules_act.keys()))
+base_df = schedules_act[sel_name]
 row = debts.loc[debts["Name"] == sel_name].iloc[0]
 
 balance = float(row["Balance"])
 annual_rate = float(row["Annual Rate (%)"])
 monthly_payment = float(row["Monthly Payment"])
-min_payment = float(row["Minimum Payment"])
 monthly_rate = annual_rate / 100 / 12
 base_interest = base_df["Interest"].sum()
 
@@ -195,7 +208,6 @@ scenario = st.selectbox(
     "Scenario",
     (
         "Pay off now",
-        "Pay off now (n‑month horizon)",
         "Extra monthly payment",
         "Lower interest rate (refinance)",
         "Increase monthly payment",
@@ -205,11 +217,6 @@ scenario = st.selectbox(
 if scenario == "Pay off now":
     st.metric("Interest Saved (lifetime)", f"${base_interest:,.2f}")
     st.info("Paying today avoids all future interest on this debt.")
-
-elif scenario == "Pay off now (n‑month horizon)":
-    horizon = int(st.number_input("Months to look ahead", 1, 480, 6, 1))
-    saved = base_df.loc[base_df["Month"] <= horizon, "Interest"].sum()
-    st.metric(f"Interest Saved in {horizon} mo", f"${saved:,.2f}")
 
 elif scenario == "Extra monthly payment":
     extra = st.number_input("Extra monthly ($)", 0.0, 1_000_000.0, 50.0, 10.0, format="%.2f")
