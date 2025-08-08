@@ -1,4 +1,4 @@
-# Multi‑Debt Payoff & What‑If Calculator
+# Debt Payoff Calculator
 
 A web‑based financial tool built with **Streamlit** that lets you compare how different payment strategies affect the payoff timeline and total interest for multiple debts.
 
@@ -44,10 +44,10 @@ pytest -q
 
 ## Tasks
 
-[*] display chart for amortization schedule per debt
-[*] remove the pay in n horizon scenario
-[*] fix the input table jitter
-[*] add csv import option
-[*] add tests
-[] add csv, pdf export option
-[] add LLM scenarios - what if i pay $500 for the first 3 months towards a credit card and 400 for the rest of the time, how will that affect my debt?
+- [x] display chart for amortization schedule per debt
+- [x] remove the pay in n horizon scenario
+- [x] fix the input table jitter
+- [x] add csv import option
+- [x] add tests
+- [ ] add csv, pdf export option
+- [ ] add LLM scenarios - what if i pay $500 for the first 3 months towards a credit card and 400 for the rest of the time, how will that affect my debt?
