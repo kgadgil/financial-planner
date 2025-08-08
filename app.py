@@ -1,7 +1,7 @@
 """
 Multi-Debt Payoff & What-If Calculator
 =====================================
-A **Streamlit** app to compare minimum-payment vs. actual-payment plans for multiple debts and explore what‑if scenarios.
+A **Streamlit** app to compare minimum‑payment vs. actual‑payment plans for multiple debts and explore what‑if scenarios.
 
 Run locally with:
 
@@ -41,19 +41,17 @@ def amortization_schedule(
         principal = min(principal, balance)
         balance -= principal
         total_interest += interest
-        rows.append(
-            {
-                "Month": month,
-                "Payment": payment + extra,
-                "Principal": principal,
-                "Interest": interest,
-                "Balance": balance,
-            }
-        )
+        rows.append({
+            "Month": month,
+            "Payment": payment + extra,
+            "Principal": principal,
+            "Interest": interest,
+            "Balance": balance,
+        })
     return pd.DataFrame(rows), total_interest
 
 # =====================================================================
-# UI state helpers
+# Streamlit page config & state init
 # =====================================================================
 
 st.set_page_config(page_title="Debt Payoff Calculator", layout="centered", initial_sidebar_state="expanded")
@@ -70,19 +68,49 @@ DEFAULT = pd.DataFrame(
     }
 )
 
+# Session‑state vars
 if "debts" not in st.session_state:
     st.session_state.debts = DEFAULT.copy()
-
 if "editing" not in st.session_state:
     st.session_state.editing = False
+
+REQUIRED_COLS = [
+    "Name",
+    "Balance",
+    "Annual Rate (%)",
+    "Minimum Payment",
+    "Monthly Payment",
+]
 
 # =========================== Sidebar ================================
 
 st.sidebar.header("Debts")
 
-# --- Edit / Save buttons ---
+# --- CSV Import ------------------------------------------------------
+
+csv_file = st.sidebar.file_uploader("📂 Import debts CSV", type="csv", accept_multiple_files=False)
+
+# Import only once per selected file to avoid infinite reruns
+if csv_file is not None:
+    file_id = f"{csv_file.name}_{csv_file.size}"  # crude identifier
+    if st.session_state.get("csv_id") != file_id:
+        try:
+            imported = pd.read_csv(csv_file).fillna(0)
+            if not set(REQUIRED_COLS).issubset(imported.columns):
+                missing = sorted(set(REQUIRED_COLS) - set(imported.columns))
+                st.sidebar.error(f"CSV missing columns: {', '.join(missing)}")
+            else:
+                st.session_state.debts = imported[REQUIRED_COLS].copy()
+                st.session_state.csv_id = file_id
+                st.sidebar.success("CSV imported – press **Edit** if you wish to tweak values.")
+                st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Could not read CSV: {e}")
+
+# --- Edit / Save buttons -------------------------------------------- --------------------------------------------
+
 if st.session_state.editing:
-    st.sidebar.success("Editing mode – make your changes then press **Save**.")
+    st.sidebar.success("Editing mode – adjust the table then press **Save**.")
     edited_df = st.sidebar.data_editor(
         st.session_state.debts,
         num_rows="dynamic",
@@ -99,20 +127,18 @@ else:
         st.session_state.editing = True
         st.rerun()
 
-# If we're in editing mode, halt further computation until saved
+# Halt calculations while editing
 if st.session_state.editing:
     st.stop()
 
 # =====================================================================
-# Calculations (run only when NOT editing)
+# Core calculations (only when not editing)
 # =====================================================================
 
-debts = st.session_state.debts.dropna(
-    subset=["Balance", "Annual Rate (%)", "Minimum Payment", "Monthly Payment"]
-)
+debts = st.session_state.debts.dropna(subset=REQUIRED_COLS)
 
 if debts.empty:
-    st.info("Add at least one debt and press **Save** to begin.")
+    st.info("Add at least one debt (or import a CSV) and press **Save** to begin.")
     st.stop()
 
 schedules_min, schedules_act = {}, {}
@@ -172,8 +198,7 @@ balances_df = (
 )
 balances_df["Total Balance"] = balances_df.sum(axis=1)
 
-col_options = list(balances_df.columns)
-sel_cols = st.multiselect("Select balances to display", col_options, default=["Total Balance"])
+sel_cols = st.multiselect("Select balances to display", list(balances_df.columns), default=["Total Balance"])
 if sel_cols:
     st.line_chart(balances_df[sel_cols])
 
