@@ -1,7 +1,7 @@
 """
-Multi-Debt Payoff & What‑If Calculator
+Multi-Debt Payoff & What-If Calculator
 =====================================
-A **Streamlit** app to compare minimum‑payment vs. actual‑payment plans for multiple debts and explore what‑if scenarios.
+A **Streamlit** app to compare minimum-payment vs. actual-payment plans for multiple debts and explore what‑if scenarios.
 
 Run locally with:
 
@@ -50,25 +50,16 @@ def amortization_schedule(
                 "Balance": balance,
             }
         )
-    df = pd.DataFrame(rows)
-    return df, total_interest
-
+    return pd.DataFrame(rows), total_interest
 
 # =====================================================================
-# Streamlit layout & state
+# UI state helpers
 # =====================================================================
 
-st.set_page_config(
-    page_title="Debt Payoff Calculator",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Debt Payoff Calculator", layout="centered", initial_sidebar_state="expanded")
 
 st.title("💸 Multi‑Debt Payoff & What‑If Calculator")
 
-# ---------------- Sidebar — Debts table ----------------
-
-st.sidebar.header("Debts")
 DEFAULT = pd.DataFrame(
     {
         "Name": ["Card A"],
@@ -82,29 +73,51 @@ DEFAULT = pd.DataFrame(
 if "debts" not in st.session_state:
     st.session_state.debts = DEFAULT.copy()
 
-edited_df: pd.DataFrame = st.sidebar.data_editor(
-    st.session_state.debts,
-    num_rows="dynamic",
-    use_container_width=True,
-    key="debt_editor",
-)
+if "editing" not in st.session_state:
+    st.session_state.editing = False
 
-st.session_state.debts = edited_df
+# =========================== Sidebar ================================
 
-debts = edited_df.dropna(
-    subset=["Balance", "Annual Rate (%)", "Minimum Payment", "Monthly Payment"]
-).copy()
+st.sidebar.header("Debts")
 
-if debts.empty:
-    st.info("Add at least one debt to begin.")
+# --- Edit / Save buttons ---
+if st.session_state.editing:
+    st.sidebar.success("Editing mode – make your changes then press **Save**.")
+    edited_df = st.sidebar.data_editor(
+        st.session_state.debts,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="debt_editor",
+    )
+    if st.sidebar.button("💾 Save", type="primary"):
+        st.session_state.debts = edited_df
+        st.session_state.editing = False
+        st.rerun()
+else:
+    st.sidebar.dataframe(st.session_state.debts, use_container_width=True)
+    if st.sidebar.button("✏️ Edit", type="secondary"):
+        st.session_state.editing = True
+        st.rerun()
+
+# If we're in editing mode, halt further computation until saved
+if st.session_state.editing:
     st.stop()
 
-# -------------- Build minimum & actual schedules ---------------
+# =====================================================================
+# Calculations (run only when NOT editing)
+# =====================================================================
+
+debts = st.session_state.debts.dropna(
+    subset=["Balance", "Annual Rate (%)", "Minimum Payment", "Monthly Payment"]
+)
+
+if debts.empty:
+    st.info("Add at least one debt and press **Save** to begin.")
+    st.stop()
 
 schedules_min, schedules_act = {}, {}
-min_interest_total, act_interest_total = 0.0, 0.0
-max_months_act = 0
-errors = []
+min_interest_total = act_interest_total = 0.0
+max_months_act, errors = 0, []
 
 for _, r in debts.iterrows():
     name = str(r["Name"]).strip() or "Unnamed Debt"
@@ -113,7 +126,6 @@ for _, r in debts.iterrows():
     p_min = float(r["Minimum Payment"])
     p_act = float(r["Monthly Payment"])
 
-    # Minimum schedule
     try:
         df_min, int_min = amortization_schedule(bal, rate_m, p_min)
         schedules_min[name] = df_min
@@ -122,7 +134,6 @@ for _, r in debts.iterrows():
         errors.append(f"{name} (minimum): {exc}")
         continue
 
-    # Actual schedule
     try:
         df_act, int_act = amortization_schedule(bal, rate_m, p_act)
         schedules_act[name] = df_act
@@ -137,28 +148,23 @@ if errors:
 
 # ---------------- Dashboard metrics -------------------
 
-total_balance = debts["Balance"].sum()
 monthly_payment_sum = debts["Monthly Payment"].sum()
 minimum_payment_sum = debts["Minimum Payment"].sum()
 interest_saved_total = min_interest_total - act_interest_total
 
-c1, c2, c3 = st.columns(3)
+a1, a2, a3 = st.columns(3)
+a1.metric("⏱️ Payoff Time (longest)", f"{max_months_act} mo", f"{max_months_act/12:.1f} yr")
+a2.metric("💰 Total Interest (actual)", f"${act_interest_total:,.2f}")
+a3.metric("💸 Interest Saved vs Min", f"${interest_saved_total:,.2f}")
 
-c1.metric("⏱️ Payoff Time (longest)", f"{max_months_act} mo", f"{max_months_act/12:.1f} yr")
+b1, b2 = st.columns(2)
+b1.metric("🧾 Sum of Monthly Payments", f"${monthly_payment_sum:,.2f}")
+b2.metric("📉 Sum of Minimum Payments", f"${minimum_payment_sum:,.2f}")
 
-c2.metric("💰 Total Interest (actual)", f"${act_interest_total:,.2f}")
-
-c3.metric("💸 Interest Saved vs Min", f"${interest_saved_total:,.2f}")
-
-c4, c5 = st.columns(2)
-c4.metric("🧾 Sum of Monthly Payments", f"${monthly_payment_sum:,.2f}")
-c5.metric("📉 Sum of Minimum Payments", f"${minimum_payment_sum:,.2f}")
-
-# ---------------- Balance curves with toggles ----------
+# ---------------- Balance curves ----------------------
 
 st.subheader("Balance Curves")
 
-# Build balance DataFrame containing each debt and total
 balances_df = (
     pd.concat({n: df.set_index("Month")["Balance"] for n, df in schedules_act.items()}, axis=1)
     .ffill()
@@ -166,37 +172,32 @@ balances_df = (
 )
 balances_df["Total Balance"] = balances_df.sum(axis=1)
 
-all_cols = list(balances_df.columns)
-selected_cols = st.multiselect(
-    "Select balances to display", all_cols, default=["Total Balance"]
-)
+col_options = list(balances_df.columns)
+sel_cols = st.multiselect("Select balances to display", col_options, default=["Total Balance"])
+if sel_cols:
+    st.line_chart(balances_df[sel_cols])
 
-if selected_cols:
-    st.line_chart(balances_df[selected_cols])
-
-# --------------- Optional individual amortization tables ------------
+# ---------------- Individual amortization tables ------
 
 if st.checkbox("Show individual amortization tables"):
     for n, df in schedules_act.items():
         st.markdown(f"#### {n} – Actual Payments")
         st.dataframe(
-            df.style.format(
-                {
-                    "Payment": "${:,.2f}",
-                    "Principal": "${:,.2f}",
-                    "Interest": "${:,.2f}",
-                    "Balance": "${:,.2f}",
-                }
-            ),
+            df.style.format({
+                "Payment": "${:,.2f}",
+                "Principal": "${:,.2f}",
+                "Interest": "${:,.2f}",
+                "Balance": "${:,.2f}",
+            }),
             height=380,
         )
 
-# ================ Per‑debt What‑If Scenarios =================
+# ================ Per‑debt What‑If Scenarios ===========
 
 st.header("🔮 What‑If Scenarios (per debt)")
 sel_name = st.selectbox("Select a debt", list(schedules_act.keys()))
 base_df = schedules_act[sel_name]
-row = debts.loc[debts["Name"] == sel_name].iloc[0]
+row = debts[debts["Name"] == sel_name].iloc[0]
 
 balance = float(row["Balance"])
 annual_rate = float(row["Annual Rate (%)"])
@@ -204,20 +205,16 @@ monthly_payment = float(row["Monthly Payment"])
 monthly_rate = annual_rate / 100 / 12
 base_interest = base_df["Interest"].sum()
 
-scenario = st.selectbox(
-    "Scenario",
-    (
-        "Pay off now",
-        "Extra monthly payment",
-        "Lower interest rate (refinance)",
-        "Increase monthly payment",
-    ),
-)
+scenario = st.selectbox("Scenario", (
+    "Pay off now",
+    "Extra monthly payment",
+    "Lower interest rate (refinance)",
+    "Increase monthly payment",
+))
 
 if scenario == "Pay off now":
     st.metric("Interest Saved (lifetime)", f"${base_interest:,.2f}")
     st.info("Paying today avoids all future interest on this debt.")
-
 elif scenario == "Extra monthly payment":
     extra = st.number_input("Extra monthly ($)", 0.0, 1_000_000.0, 50.0, 10.0, format="%.2f")
     if extra > 0:
@@ -225,7 +222,6 @@ elif scenario == "Extra monthly payment":
         st.metric("Months Saved", len(base_df) - len(extra_df))
         st.metric("Interest Saved", f"${base_interest - extra_int:,.2f}")
         st.line_chart(extra_df.set_index("Month")["Balance"], height=250)
-
 elif scenario == "Lower interest rate (refinance)":
     new_rate = st.number_input("New annual rate (%)", 0.0, 100.0, max(0.0, annual_rate - 1.0), 0.1, format="%.2f")
     if new_rate != annual_rate:
@@ -233,7 +229,6 @@ elif scenario == "Lower interest rate (refinance)":
         low_df, low_int = amortization_schedule(balance, new_mr, monthly_payment)
         st.metric("Interest Saved", f"${base_interest - low_int:,.2f}")
         st.line_chart(low_df.set_index("Month")["Balance"], height=250)
-
 elif scenario == "Increase monthly payment":
     new_payment = st.number_input("New monthly payment ($)", monthly_payment, 1_000_000.0, monthly_payment + 100.0, 10.0, format="%.2f")
     if new_payment > monthly_payment:
